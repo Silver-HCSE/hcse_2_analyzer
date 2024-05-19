@@ -112,8 +112,10 @@ impl Analyzer {
         cleared = cleared.replace("(", " ");
         cleared = cleared.replace(")", " ");
         cleared = cleared.replace("!", " ");
+        cleared = cleared.replace(",", " ");
         cleared = cleared.to_lowercase();
         let mut ret: Vec<String> = cleared.split_whitespace().map(|w| w.to_string()).collect();
+        ret.retain(|w| w.len() > 4);
         ret.sort();
         ret.dedup();
         ret

@@ -5,7 +5,7 @@ mod analyzer_data;
 mod article;
 
 fn main() {
-    let mut analyzer = analyzer::Analyzer::new(0.1, 0.3);
+    let mut analyzer = analyzer::Analyzer::new(0.05, 0.25);
     analyzer.run();
 }
 
