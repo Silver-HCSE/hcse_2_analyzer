@@ -9,4 +9,6 @@ edition = "2021"
 sprs = "0.11.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+indicatif = "0.17.8"
+histogram = "0.10.1"
 
