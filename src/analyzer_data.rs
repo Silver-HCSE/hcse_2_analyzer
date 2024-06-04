@@ -209,20 +209,24 @@ impl AnalyzerData {
 
     pub fn rate_article_keywords(&self, words: Vec<String>, id: String) -> RatedPublication {
         let mut rating: Vec<f32> = vec![];
+        let mut hm = HashMap::new();
+        for word in words.iter().enumerate() {
+            let counter = hm.entry(word.1.to_string()).or_insert(0);
+            *counter += 1;
+        }
         for _i in 0..DEFAULT_HALLMARKS.len() {
             rating.push(0.0);
         }
 
         let mut sum = 0.0;
-        for word in words {
-            if self.keywords_map.contains_key(&word) {
-                let keyword_index = self.keywords_map.get(&word).unwrap();
-                for hallmark in 0..DEFAULT_HALLMARKS.len() {
-                    if self.is_rating_non_zero(*keyword_index, hallmark) {
-                        let component = self.keyword_ratings[hallmark][*keyword_index];
-                        rating[hallmark] += component;
-                        sum += component;
-                    }
+        for word in hm {
+            let keyword_index = self.keywords_map.get(&word.0).unwrap();
+            for hallmark in 0..DEFAULT_HALLMARKS.len() {
+                if self.is_rating_non_zero(*keyword_index, hallmark) {
+                    let component =
+                        self.keyword_ratings[hallmark][*keyword_index] * f32::sqrt(word.1 as f32);
+                    rating[hallmark] += component;
+                    sum += component;
                 }
             }
         }
