@@ -1,7 +1,20 @@
 use crate::analyzer_data::AnalyzerData;
-use crate::article;
-use std::collections::HashMap;
+use crate::{article, DEFAULT_HALLMARKS};
+use serde::ser::{SerializeSeq, Serializer};
+use serde::Serialize;
 use std::fs;
+use std::{collections::HashMap, io::Write};
+
+fn serialize_f32_vec<S>(vec: &Vec<f32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut seq = serializer.serialize_seq(Some(vec.len()))?;
+    for &num in vec.iter() {
+        seq.serialize_element(&format!("{:.3}", num))?;
+    }
+    seq.end()
+}
 
 pub struct Analyzer {
     filenames: Vec<String>,
@@ -11,10 +24,27 @@ pub struct Analyzer {
     bar_style: indicatif::ProgressStyle,
 }
 
+#[derive(Serialize, Debug)]
+pub struct RatedPublication {
+    pub i: String,
+    #[serde(serialize_with = "serialize_f32_vec")]
+    pub r: Vec<f32>,
+}
+
+impl RatedPublication {
+    pub fn is_valid(&self) -> bool {
+        let mut rating_norm = 0.0;
+        for i in 0..DEFAULT_HALLMARKS.len() {
+            rating_norm += self.r[i];
+        }
+
+        rating_norm > 0.95 && rating_norm < 1.05
+    }
+}
 impl Analyzer {
     pub fn new(lower_cutoff: f32, upper_cutoff: f32) -> Self {
         let bar_style = indicatif::ProgressStyle::with_template(
-            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>5}/{len:5} {eta}",
+            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>5}/{len:5} {msg} {eta}",
         )
         .unwrap()
         .progress_chars("##-");
@@ -34,16 +64,49 @@ impl Analyzer {
         analyzer_data.print();
         analyzer_data.compute_keyword_ratings();
         analyzer_data.write_rating_output();
+        self.rate_publications(analyzer_data);
     }
 
-    fn build_relations_matrix(&self, analyzer: &mut AnalyzerData) {
+    fn rate_publications(&self, analyzer: AnalyzerData) {
+        let mut article_ratings = vec![];
         let bar = indicatif::ProgressBar::new(self.filenames.len() as u64);
+        bar.set_message("Rating the article database.");
         bar.set_style(self.bar_style.clone());
         for file in self.filenames.iter() {
             let file_contents: String = fs::read_to_string(file).unwrap();
             let articles: Vec<article::Article> = serde_json::from_str(&file_contents).unwrap();
             for article in articles.iter() {
-                let words = Analyzer::split_abstract_into_words(article.paper_abstract.clone());
+                if article.pmc != "" {
+                    let words =
+                        Analyzer::split_abstract_into_words(article.paper_abstract.clone(), false);
+                    let article_rating: RatedPublication =
+                        analyzer.rate_article_keywords(words, article.pmc.clone());
+                    if article_rating.is_valid() {
+                        article_ratings.push(article_rating);
+                    }
+                }
+            }
+            bar.inc(1);
+        }
+
+        bar.finish_with_message("Done rating publications.");
+
+        println!("Rated a total of {} articles.", article_ratings.len());
+        let output_json = serde_json::to_string(&article_ratings).unwrap();
+        let mut file = std::fs::File::create("article_database.json".to_string()).unwrap();
+        file.write_all(output_json.as_bytes()).unwrap();
+    }
+
+    fn build_relations_matrix(&self, analyzer: &mut AnalyzerData) {
+        let bar = indicatif::ProgressBar::new(self.filenames.len() as u64);
+        bar.set_message("Building Relations Matrix");
+        bar.set_style(self.bar_style.clone());
+        for file in self.filenames.iter() {
+            let file_contents: String = fs::read_to_string(file).unwrap();
+            let articles: Vec<article::Article> = serde_json::from_str(&file_contents).unwrap();
+            for article in articles.iter() {
+                let words =
+                    Analyzer::split_abstract_into_words(article.paper_abstract.clone(), true);
                 analyzer.update_with_article_data(&words);
             }
             bar.inc(1);
@@ -68,6 +131,7 @@ impl Analyzer {
 
     fn analyze_dataset(&mut self) -> AnalyzerData {
         let bar = indicatif::ProgressBar::new(self.filenames.len() as u64);
+        bar.set_message("Searching for possible keywords...");
         bar.set_style(self.bar_style.clone());
         for file in self.filenames.clone().iter() {
             self.analyze_one_input_file(file.clone());
@@ -98,14 +162,14 @@ impl Analyzer {
     }
 
     fn process_abstract(&mut self, paper_abstract: String) {
-        let words = Analyzer::split_abstract_into_words(paper_abstract);
+        let words = Analyzer::split_abstract_into_words(paper_abstract, true);
         for word in words {
             let counter = self.keyword_candidates.entry(word.to_string()).or_insert(0);
             *counter += 1;
         }
     }
 
-    pub fn split_abstract_into_words(paper_abstract: String) -> Vec<String> {
+    pub fn split_abstract_into_words(paper_abstract: String, dedupe: bool) -> Vec<String> {
         let mut cleared = paper_abstract.replace(".", " ");
         cleared = cleared.replace("?", " ");
         cleared = cleared.replace(";", " ");
@@ -117,7 +181,9 @@ impl Analyzer {
         let mut ret: Vec<String> = cleared.split_whitespace().map(|w| w.to_string()).collect();
         ret.retain(|w| w.len() > 4);
         ret.sort();
-        ret.dedup();
+        if dedupe {
+            ret.dedup();
+        }
         ret
     }
 

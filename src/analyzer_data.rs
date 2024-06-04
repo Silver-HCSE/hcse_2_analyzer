@@ -1,9 +1,12 @@
 use histogram::Histogram;
 use serde::{Deserialize, Serialize};
-use sprs::{vec::IntoSparseVecIter, CsMat, CsVec};
+use sprs::{CsMat, CsVec};
 use std::{collections::HashMap, io::Write};
 
-use crate::{analyzer::Analyzer, DEFAULT_HALLMARKS};
+use crate::{
+    analyzer::{Analyzer, RatedPublication},
+    DEFAULT_HALLMARKS,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Hallmark {
@@ -117,7 +120,8 @@ impl AnalyzerData {
 
     pub fn compute_keyword_ratings(&mut self) {
         for hallmark in DEFAULT_HALLMARKS.iter().enumerate() {
-            let terms = Analyzer::split_abstract_into_words(hallmark.1.description.to_string());
+            let terms =
+                Analyzer::split_abstract_into_words(hallmark.1.description.to_string(), true);
             for t in terms {
                 if self.keywords_map.contains_key(&t) {
                     let keyword_index = *self.keywords_map.get(&t).unwrap();
@@ -201,5 +205,34 @@ impl AnalyzerData {
             }
         }
         number_of_unrated_words
+    }
+
+    pub fn rate_article_keywords(&self, words: Vec<String>, id: String) -> RatedPublication {
+        let mut rating: Vec<f32> = vec![];
+        for _i in 0..DEFAULT_HALLMARKS.len() {
+            rating.push(0.0);
+        }
+
+        let mut sum = 0.0;
+        for word in words {
+            if self.keywords_map.contains_key(&word) {
+                let keyword_index = self.keywords_map.get(&word).unwrap();
+                for hallmark in 0..DEFAULT_HALLMARKS.len() {
+                    if self.is_rating_non_zero(*keyword_index, hallmark) {
+                        let component = self.keyword_ratings[hallmark][*keyword_index];
+                        rating[hallmark] += component;
+                        sum += component;
+                    }
+                }
+            }
+        }
+
+        for i in 0..DEFAULT_HALLMARKS.len() {
+            rating[i] = rating[i] / sum;
+        }
+        RatedPublication {
+            i: id.clone(),
+            r: rating,
+        }
     }
 }
