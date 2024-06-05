@@ -220,13 +220,16 @@ impl AnalyzerData {
 
         let mut sum = 0.0;
         for word in hm {
-            let keyword_index = self.keywords_map.get(&word.0).unwrap();
-            for hallmark in 0..DEFAULT_HALLMARKS.len() {
-                if self.is_rating_non_zero(*keyword_index, hallmark) {
-                    let component =
-                        self.keyword_ratings[hallmark][*keyword_index] * f32::sqrt(word.1 as f32);
-                    rating[hallmark] += component;
-                    sum += component;
+            let index_opt = self.keywords_map.get(&word.0);
+            if index_opt.is_some() {
+                let keyword_index = index_opt.unwrap();
+                for hallmark in 0..DEFAULT_HALLMARKS.len() {
+                    if self.is_rating_non_zero(*keyword_index, hallmark) {
+                        let component = self.keyword_ratings[hallmark][*keyword_index]
+                            * f32::sqrt(word.1 as f32);
+                        rating[hallmark] += component;
+                        sum += component;
+                    }
                 }
             }
         }
