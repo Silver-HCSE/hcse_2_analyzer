@@ -1,6 +1,7 @@
 use crate::analyzer_data::AnalyzerData;
 use crate::{article, DEFAULT_HALLMARKS};
 use serde::ser::{SerializeSeq, Serializer};
+use regex::Regex;
 use serde::Serialize;
 use std::fs;
 use std::{collections::HashMap, io::Write};
@@ -170,19 +171,34 @@ impl Analyzer {
     }
 
     pub fn split_abstract_into_words(paper_abstract: String, dedupe: bool) -> Vec<String> {
-        let mut cleared = paper_abstract.replace(".", " ");
-        cleared = cleared.replace("?", " ");
-        cleared = cleared.replace(";", " ");
-        cleared = cleared.replace("(", " ");
-        cleared = cleared.replace(")", " ");
-        cleared = cleared.replace("!", " ");
-        cleared = cleared.replace(",", " ");
-        cleared = cleared.to_lowercase();
-        let mut ret: Vec<String> = cleared.split_whitespace().map(|w| w.to_string()).collect();
+        let re = Regex::new(r#"[.?,;()!\/'"%=]"#).unwrap();
+        let cleared = re.replace_all(&paper_abstract, " ").to_string().to_lowercase();
+        let mut ret: Vec<String> = cleared.split_whitespace().map(|w| Analyzer::clean_keyword(w.to_string())).collect();
         ret.retain(|w| w.len() > 4);
         ret.sort();
         if dedupe {
             ret.dedup();
+        }
+        ret
+    }
+
+    pub fn clean_keyword(in_word: String) -> String {
+        let mut ret = in_word.clone().to_string();
+        let mut has_changed = true;
+        while has_changed {
+            has_changed = false;
+            if ret.len() > 4 {
+            let first_char = ret.chars().next().unwrap();
+            if first_char == '-' {
+                ret.remove(0);
+                has_changed = true;
+            }
+            let last_char: char = ret.chars().last().unwrap();
+            if last_char == '-' {
+                ret.pop();
+                has_changed = true;
+            }
+            }
         }
         ret
     }
